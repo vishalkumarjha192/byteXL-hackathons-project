@@ -1024,15 +1024,11 @@ MIT License
 
 ## 👤 Author
 
-**Your Name / Organization**
+**Vishal Kumar Jha**
 
-Replace this section with your:
+Vishal Kumar Jha\
+GitHub: https://github.com/vishalkumarjha192
 
-- name
-- GitHub profile
-- portfolio
-- company
-- contact information
 
 ---
 
