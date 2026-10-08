@@ -1,89 +1,1043 @@
-# AI Content Creator Marketplace
+# Creatorly — AI Content Creator Marketplace
 
-Status: all 7 phases are done, plus file uploads, live chat, email, password reset, wizards, an audit log and tests on both sides. See "Known gaps" at the bottom for what is still missing.
+> A full-stack marketplace that connects brands with AI content creators for UGC, product ads, AI avatars, voiceovers, social content, and visual campaigns.
 
-## Run it
-1. `cp .env.example .env` and set `JWT_SECRET`
-2. `docker compose up --build`
-3. Open http://localhost:5173 (the app) and http://localhost:8000/docs (API docs)
+Creatorly helps brands discover creators, publish projects, review applications, manage production, communicate in real time, handle project payments, and leave reviews — while giving creators profiles, portfolios, recommendations, project workspaces, earnings, and payouts.
 
-## Load demo data
-    docker compose exec backend python -m app.seed
-Creates 10 brands (brand1@example.com ...), 30 creators (creator1@example.com ...), 20 projects (4 already completed, with chat history and reviews), 50 portfolio items and 40 applications. Every seeded account uses the password `password123`.
+---
 
-## Create an admin account
-Admins cannot self-register. Create the first one with:
+## ✨ Highlights
 
-    docker compose exec backend python -m app.create_admin --email you@company.com
+- **Creator marketplace** with search, filters, portfolios, ratings, verification, and featured creators
+- **Brand project management** for briefs, budgets, deadlines, applications, hiring, deliverables, revisions, and completion
+- **AI-assisted workflows**
+  - AI-generated creative briefs
+  - Rule-based creator/project matching
+  - Recommended projects for creators
+  - Optional Anthropic integration
+- **Secure authentication** with JWT access/refresh tokens and Argon2 password hashing
+- **Role-based access control** for `BRAND`, `CREATOR`, and `ADMIN`
+- **Project workspace** with deliverables, revisions, chat, reviews, and payment status
+- **Payments abstraction** with a development-safe mock provider and an extension point for Stripe/Razorpay
+- **File uploads** with type/size validation, public/private access, and signed links for private files
+- **Notifications and email** with console and SMTP backends
+- **Admin dashboard** for moderation, verification, reports, categories, payments, users, and audit logs
+- **WebSocket project chat** with polling fallback
+- **PostgreSQL + SQLAlchemy + Alembic**
+- **Frontend and backend test suites**
 
-It asks for a password (at least 8 characters). The demo data also includes `admin@example.com` with the password `password123`. Remove it in any shared environment.
+---
 
-## Database migrations
-Migrations run automatically when the backend container starts (`alembic upgrade head`). After changing a model:
-    cd backend && alembic revision --autogenerate -m "describe the change" && alembic upgrade head
-Note: the migrations were generated and tested on SQLite. Check them on your first Postgres start.
-If you ran an earlier version of this project, its database was created without migrations. Reset it once with `docker compose down -v` before `docker compose up --build`.
+## 🧱 Tech Stack
 
-## Run the frontend without Docker
-    cd frontend && npm install && npm run dev
-The dev server proxies /api to http://localhost:8000. Set VITE_API_URL to call a different API address.
+### Frontend
 
-## Run tests (no Docker needed)
-    cd backend && pip install -r requirements.txt && pytest
-    cd frontend && npm install && npm test
+| Technology | Purpose |
+|---|---|
+| React 18 | UI |
+| TypeScript | Type safety |
+| Vite | Development/build tooling |
+| React Router | Routing |
+| TanStack Query | Server state/data fetching |
+| React Hook Form | Forms |
+| Zod | Validation |
+| Tailwind CSS | Styling |
+| Vitest + Testing Library | Frontend tests |
 
-## What works now
-- Register as BRAND or CREATOR (admins cannot self-register)
-- Login, refresh token, GET /api/v1/auth/me
-- Role guard `require_roles(...)`; responses use {success, data, message} / {success, error}
-- Argon2 password hashing, JWT access + refresh tokens
+### Backend
 
-- Creator profile setup: PATCH /api/v1/creators/me (skills, niches, languages, AI tools, pricing)
-- Creator search: GET /api/v1/creators with q, category, niche, language, ai_tool, min_price, max_price, min_rating, delivery_days, sort, page, page_size
-- Portfolio: POST/DELETE /api/v1/creators/me/portfolio, GET /api/v1/creators/{id}/portfolio
-- Jobs: POST /api/v1/projects (brands), GET /api/v1/projects (public, OPEN only), GET /api/v1/projects/{id}
-- Dropdown data: GET /api/v1/creators/lookups
-- Applications: POST /api/v1/applications, GET /applications/mine, GET /applications/project/{id} (brand), POST /applications/{id}/accept | reject | withdraw
-- Hiring creates a contract; the fee comes from PLATFORM_FEE_PERCENT (default 20, so 5000 splits into 4000 for the creator and 1000 platform fee)
-- Workflow: POST /deliverables, POST /revisions, GET /projects/mine, GET /projects/{id}/workspace, POST /projects/{id}/approve | complete | cancel
-- Notifications: GET /api/v1/notifications, GET /notifications/unread-count, POST /notifications/{id}/read, POST /notifications/read-all
-- Messaging: GET /api/v1/messages/project/{id} (polled every 5 seconds by the UI), POST /api/v1/messages. Only the brand and hired creator can read or write
-- Reviews: POST /api/v1/reviews (after a project is completed, once per side), GET /reviews/creator/{id}. A brand's review updates the creator's rating
-- Payments: hiring creates a PENDING payment. The brand funds it (POST /api/v1/payments/project/{id}/fund, status HELD). Completing the project releases it to the creator (RELEASED). Cancelling refunds a funded payment (REFUNDED)
-- Earnings: GET /api/v1/payments/mine (history, totals per currency, monthly chart data), POST /api/v1/payments/withdraw (creators, up to their available balance)
-- Payment provider: all money movement goes through `PaymentProvider` in `app/services/payment_providers.py`. `PAYMENT_PROVIDER=mock` is the only one built in. To add Stripe or Razorpay, subclass `PaymentProvider`, register it in `PROVIDERS` and set `PAYMENT_PROVIDER` in `.env`. The business rules in `payment_service.py` do not change
-- AI brief: POST /api/v1/ai/brief (brands, limited to 10 per minute per user). Without a key it returns a clearly labelled template draft. With `ANTHROPIC_API_KEY` set it asks the model (`AI_MODEL`) and falls back to the template if the call fails
-- Creator matching: GET /api/v1/ai/match/{project_id} (brand owner) returns creators with `match_score` (0 to 100), reasons and warnings. GET /api/v1/ai/recommendations/projects (creators) returns open projects ranked for them
-- Matching rules (weights add up to 100): skill 30, language 15, niche 15, budget 15, content type 10, rating and experience 10, keyword overlap 5, minus 10 if the creator's delivery time may miss the deadline. The logic is behind `MatchingStrategy` in `app/services/matching.py`, so an LLM strategy can be added later and selected with `MATCHING_STRATEGY`
-- Company profile: GET and PATCH /api/v1/brands/me (industry feeds the matching)
-- Admin (all need an ADMIN account): GET /api/v1/admin/stats, /users, /creators, /brands, /projects, /payments, /reports (with search, filters and pagination), GET /admin/projects/{id} and /admin/payments/{id} for details
-- Moderation: POST /admin/users/{id}/suspend (blocks login and existing tokens, hides the creator), POST /admin/creators/{id}/verify, POST /admin/creators/{id}/feature (featured creators sort first), POST /admin/reports/{id}/resolve (REMOVE_CONTENT, RESOLVE or DISMISS), GET/POST/DELETE /admin/categories/{kind}
-- Reports: any signed-in user can POST /api/v1/reports for a creator profile, project, review or portfolio item. Removing content is only allowed for open projects, reviews and portfolio items. Removing a review recalculates the creator's rating
-- Verification: creators request it with POST /api/v1/creators/me/verification-request and an admin approves it
-- Files: POST /api/v1/files (multipart: purpose, optional project_id, file). Purposes: AVATAR, LOGO, PORTFOLIO (public), DELIVERABLE, ATTACHMENT, ASSET (private). Allowed types are checked by extension and by the file's first bytes, with size limits per purpose. SVG is refused. Public files are served at /files/{id}/content. Private files have no permanent URL: GET /files/{id}/link returns a signed link that expires after 5 minutes, and only for people allowed to see the file
-- Storage: local disk by default (the `uploads` Docker volume). Set `S3_BUCKET` (and the other S3 settings) to use S3 or any S3-compatible service. The code behind it is `app/services/storage.py`
-- Live chat: a WebSocket at /api/v1/messages/ws/{project_id}?token=... tells both people when something changed, and the page falls back to polling if it drops. It lives in one process, so running several backend instances needs a shared broker such as Redis (see `app/services/realtime.py`)
-- Password reset: POST /auth/forgot-password and /auth/reset-password. The link lasts 30 minutes and stops working once used. Login and reset requests are rate limited
-- Email: set `EMAIL_BACKEND=smtp` and the SMTP settings to send real email. The default `console` backend only prints emails to the backend log. Emails go out only after the action has been saved, and users can turn them off at /notifications. Which notifications send email is listed in `EMAIL_TYPES` in `notification_service.py`
-- Audit log: every admin action is recorded (GET /admin/audit, Audit log tab)
-- Project status flow: OPEN, IN_PROGRESS, DRAFT_SUBMITTED, REVISION_REQUESTED, FINAL_SUBMITTED, APPROVED, COMPLETED (or CANCELLED)
+| Technology | Purpose |
+|---|---|
+| FastAPI | REST API |
+| Python | Backend language |
+| SQLAlchemy | ORM |
+| PostgreSQL | Database |
+| Alembic | Database migrations |
+| Pydantic | Validation/settings |
+| JWT | Authentication |
+| Argon2 | Password hashing |
+| Boto3 | S3-compatible storage |
+| WebSockets | Real-time messaging |
+| Pytest | Backend tests |
 
-## Frontend pages
-- Public: / , /creators (filters in the URL), /creators/:id, /jobs, /jobs/:id, /how-it-works, /pricing, /about, /login, /register
-- Creator: /dashboard/creator/profile (edit profile, tags, portfolio)
-- Creator: /dashboard/creator (your work and applications)
-- Brand: /dashboard/brand (projects), /dashboard/brand/profile (company profile), /dashboard/brand/projects/new, /dashboard/brand/projects/:id/applications
-- Admin: /dashboard/admin (overview, users, creators, brands, projects, payments, reports, categories)
-- Both: /projects/:id/workspace (brief, deliverables, revisions, messages, reviews, payment), /notifications, /dashboard/payments (brand payments or creator earnings, chart and withdrawals)
+### Infrastructure
 
-## Roadmap
-Done: 1 foundation, 2 marketplace, 3 transactions, 4 communication. Done: 5 payments, 6 AI, 7 admin.
+- Docker
+- Docker Compose
+- PostgreSQL 16
+- Local file storage or S3-compatible object storage
 
-## Known gaps
-- **Real payment gateway.** Only the mock provider exists, behind the `PaymentProvider` interface. Moving real money also needs a Stripe Connect or Razorpay Route account for each creator (identity checks and bank details), webhook handling and testing with your own keys. That is a design and compliance task, so it was not guessed at here
-- **"Continue with Google".** The button is shown but disabled. It needs Google OAuth credentials from you
-- **Single-instance assumptions.** Live chat and the rate limiter keep state in memory. Several backend instances need Redis for both
-- **File handling.** Uploaded files are not deleted when the thing they belong to is removed, there is no virus scanning, and video does not support seeking (no HTTP range requests)
-- **Chat sockets** pass the login token in the URL. It is short-lived, but a proxy log could record it
-- **Migrations and Docker** were tested on SQLite and with the test suites, not on a live PostgreSQL server. Check the first `docker compose up`
-- **Browser testing.** The frontend tests simulate the app with a fake API. Nothing has been clicked through in a real browser or checked on a phone
+---
+
+## 🗂️ Project Structure
+
+```text
+ai-creator-marketplace/
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── features/
+│   │   │   ├── admin/
+│   │   │   ├── ai/
+│   │   │   ├── auth/
+│   │   │   ├── comms/
+│   │   │   ├── creators/
+│   │   │   ├── jobs/
+│   │   │   ├── payments/
+│   │   │   ├── projects/
+│   │   │   └── reviews/
+│   │   ├── lib/
+│   │   ├── pages/
+│   │   ├── App.tsx
+│   │   └── main.tsx
+│   ├── package.json
+│   └── vite.config.ts
+│
+├── backend/
+│   ├── app/
+│   │   ├── dependencies/
+│   │   ├── models/
+│   │   ├── repositories/
+│   │   ├── routers/
+│   │   ├── schemas/
+│   │   ├── services/
+│   │   ├── utils/
+│   │   ├── config.py
+│   │   ├── database.py
+│   │   └── main.py
+│   ├── alembic/
+│   ├── tests/
+│   ├── requirements.txt
+│   └── Dockerfile
+│
+├── docker-compose.yml
+├── .env.example
+└── README.md
+```
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+For the Docker workflow, install:
+
+- Docker
+- Docker Compose
+
+For local development without Docker:
+
+- Python 3.11+
+- Node.js 18+
+- PostgreSQL 14+
+
+---
+
+### 1. Clone the repository
+
+```bash
+git clone <your-repository-url>
+cd ai-creator-marketplace
+```
+
+### 2. Configure environment variables
+
+Create your local environment file:
+
+```bash
+cp .env.example .env
+```
+
+At minimum, set a strong JWT secret:
+
+```env
+JWT_SECRET=replace-with-a-long-random-string
+```
+
+For local development, the default configuration uses:
+
+- PostgreSQL
+- local file storage
+- mock payments
+- console email
+- template-based AI briefs
+- rule-based creator matching
+
+This means the application can run without external payment, email, or AI credentials.
+
+### 3. Start the application
+
+```bash
+docker compose up --build
+```
+
+The services will be available at:
+
+- **Frontend:** `http://localhost:5173`
+- **API:** `http://localhost:8000`
+- **Swagger/OpenAPI:** `http://localhost:8000/docs`
+- **Health check:** `http://localhost:8000/health`
+
+Database migrations run automatically when the backend starts.
+
+---
+
+## 🌱 Demo Data
+
+Load demo data with:
+
+```bash
+docker compose exec backend python -m app.seed
+```
+
+The seed creates sample:
+
+- brands
+- creators
+- projects
+- portfolio items
+- applications
+- completed projects
+- chat history
+- reviews
+
+Demo accounts use:
+
+```text
+Password: password123
+```
+
+Examples:
+
+```text
+brand1@example.com
+creator1@example.com
+admin@example.com
+```
+
+> Do not use the demo credentials in a shared or production environment.
+
+---
+
+## 👑 Admin Account
+
+Admins cannot register through the normal registration flow.
+
+Create an admin from the backend:
+
+```bash
+docker compose exec backend python -m app.create_admin --email admin@yourcompany.com
+```
+
+You will be prompted for a password.
+
+---
+
+## 💻 Local Development Without Docker
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The Vite development server proxies API requests to the backend.
+
+To use a different API URL:
+
+```env
+VITE_API_URL=http://localhost:8000
+```
+
+### Backend
+
+Create and activate a virtual environment:
+
+```bash
+cd backend
+
+python -m venv .venv
+```
+
+Linux/macOS:
+
+```bash
+source .venv/bin/activate
+```
+
+Windows PowerShell:
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Start FastAPI:
+
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+
+Make sure PostgreSQL is running and `DATABASE_URL` points to the correct database.
+
+---
+
+## 🧪 Testing
+
+### Backend
+
+```bash
+cd backend
+pip install -r requirements.txt
+pytest
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm test
+```
+
+### Frontend production build
+
+```bash
+npm run build
+```
+
+The repository includes tests covering authentication, marketplace flows, projects/workspaces, communications, payments, files, AI, and admin functionality.
+
+---
+
+## 🔐 Authentication & Roles
+
+Creatorly uses JWT-based authentication.
+
+### Roles
+
+#### `BRAND`
+
+Brands can:
+
+- create and manage projects
+- search for creators
+- review applications
+- hire creators
+- fund projects
+- review deliverables
+- request revisions
+- approve/complete projects
+- message hired creators
+- leave reviews
+
+#### `CREATOR`
+
+Creators can:
+
+- build a public profile
+- manage skills, niches, languages, AI tools, and pricing
+- upload portfolio items
+- discover relevant projects
+- apply to projects
+- manage deliverables and revisions
+- communicate with brands
+- track earnings
+- request withdrawals
+- receive reviews
+
+#### `ADMIN`
+
+Admins can:
+
+- view platform statistics
+- manage users
+- moderate creators and brands
+- verify creators
+- feature creators
+- manage projects
+- inspect payments
+- resolve reports
+- manage marketplace categories
+- review audit logs
+
+---
+
+## 🤖 AI Features
+
+### AI Brief Generator
+
+Brands can submit a natural-language request and receive a structured content brief containing:
+
+- title
+- hook
+- script
+- scenes
+- call-to-action
+- deliverables
+- suggested category
+- content type
+- platform
+
+Without an API key, Creatorly uses a built-in template provider.
+
+To enable Anthropic-generated briefs:
+
+```env
+AI_PROVIDER=anthropic
+ANTHROPIC_API_KEY=your-api-key
+AI_MODEL=claude-sonnet-5-5
+```
+
+Or use automatic provider selection:
+
+```env
+AI_PROVIDER=auto
+ANTHROPIC_API_KEY=your-api-key
+```
+
+If an external AI request fails, the application falls back to the template provider instead of breaking the feature.
+
+### Creator Matching
+
+The default matching engine is deterministic and uses:
+
+| Signal | Weight |
+|---|---:|
+| Skills | 30 |
+| Language | 15 |
+| Niche | 15 |
+| Budget | 15 |
+| Content type | 10 |
+| Rating & experience | 10 |
+| Keyword overlap | 5 |
+
+A possible delivery-time conflict can also reduce the final score.
+
+The matching implementation is isolated behind a strategy interface, allowing an LLM-based strategy to be added later.
+
+Configure it with:
+
+```env
+MATCHING_STRATEGY=rules
+```
+
+---
+
+## 💳 Payments
+
+The payment system is intentionally provider-agnostic.
+
+The current development provider is:
+
+```env
+PAYMENT_PROVIDER=mock
+```
+
+The mock provider performs no real financial transactions and is safe for local development and tests.
+
+### Payment lifecycle
+
+```text
+Hiring
+   ↓
+PENDING
+   ↓
+Brand funds project
+   ↓
+HELD
+   ↓
+Project completed
+   ↓
+RELEASED
+```
+
+Cancellation of a funded project results in:
+
+```text
+HELD → REFUNDED
+```
+
+The platform commission is configurable:
+
+```env
+PLATFORM_FEE_PERCENT=20
+```
+
+For production payments, implement a real provider such as Stripe Connect or Razorpay Route behind the existing `PaymentProvider` interface.
+
+> Real-money production use also requires provider onboarding, creator identity/bank verification, webhook handling, reconciliation, and compliance work.
+
+---
+
+## 📁 File Storage
+
+Files can be stored locally or in an S3-compatible object store.
+
+### Local storage
+
+Leave this empty:
+
+```env
+S3_BUCKET=
+```
+
+Uploaded files are stored in the Docker `uploads` volume.
+
+### S3-compatible storage
+
+Configure:
+
+```env
+S3_ENDPOINT=
+S3_ACCESS_KEY=
+S3_SECRET_KEY=
+S3_BUCKET=
+S3_REGION=us-east-1
+```
+
+Supported file purposes include:
+
+```text
+AVATAR
+LOGO
+PORTFOLIO
+DELIVERABLE
+ATTACHMENT
+ASSET
+```
+
+Public files can be served directly.
+
+Private files use short-lived signed links and are only accessible to authorized users.
+
+---
+
+## 📧 Email
+
+The default backend prints emails to the server log:
+
+```env
+EMAIL_BACKEND=console
+```
+
+For SMTP:
+
+```env
+EMAIL_BACKEND=smtp
+EMAIL_FROM=Creatorly <no-reply@yourdomain.com>
+
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your-user
+SMTP_PASSWORD=your-password
+SMTP_TLS=true
+```
+
+Email delivery is used for supported notifications and password-reset workflows.
+
+---
+
+## 🔔 Notifications & Messaging
+
+Creatorly includes:
+
+- in-app notifications
+- unread notification counts
+- read-all/read-one actions
+- project messaging
+- WebSocket notifications for chat changes
+- polling fallback when WebSockets disconnect
+
+The current real-time implementation assumes a single backend process.
+
+For multiple backend instances, introduce a shared broker such as Redis.
+
+---
+
+## 🛡️ Security
+
+The application includes several security-oriented features:
+
+- Argon2 password hashing
+- JWT access and refresh tokens
+- role-based route protection
+- suspended-account checks
+- request rate limiting for sensitive authentication flows
+- file extension and file-signature validation
+- file size limits
+- private file authorization
+- expiring signed file URLs
+- validation through Pydantic schemas
+- centralized API error responses
+- admin audit logging
+
+### Production checklist
+
+Before production deployment:
+
+- [ ] Replace `JWT_SECRET` with a strong random secret
+- [ ] Use production PostgreSQL credentials
+- [ ] Configure HTTPS
+- [ ] Configure a real payment provider
+- [ ] Configure SMTP or a transactional email provider
+- [ ] Configure S3/object storage
+- [ ] Add virus/malware scanning for uploaded files
+- [ ] Add Redis for multi-instance rate limiting/realtime messaging
+- [ ] Configure backups and database monitoring
+- [ ] Remove demo accounts and seed data
+- [ ] Review CORS and trusted origins
+- [ ] Configure production logging and alerting
+- [ ] Add browser/E2E testing
+- [ ] Review privacy, payment, tax, and marketplace compliance requirements
+
+---
+
+## 🔌 API
+
+The API is versioned under:
+
+```text
+/api/v1
+```
+
+Major resource groups include:
+
+```text
+/auth
+/users
+/creators
+/brands
+/projects
+/applications
+/deliverables
+/revisions
+/messages
+/notifications
+/reviews
+/payments
+/files
+/ai
+/admin
+```
+
+Interactive API documentation is available when the backend is running:
+
+```text
+http://localhost:8000/docs
+```
+
+The API uses consistent response shapes.
+
+Successful responses generally follow:
+
+```json
+{
+  "success": true,
+  "data": {}
+}
+```
+
+Errors follow:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human-readable error message"
+  }
+}
+```
+
+---
+
+## 🧭 Main Frontend Routes
+
+### Public
+
+```text
+/
+ /creators
+ /creators/:id
+ /jobs
+ /jobs/:id
+ /how-it-works
+ /pricing
+ /about
+ /login
+ /register
+ /forgot-password
+ /reset-password
+```
+
+### Creator
+
+```text
+/dashboard/creator
+/dashboard/creator/onboarding
+/dashboard/creator/profile
+```
+
+### Brand
+
+```text
+/dashboard/brand
+/dashboard/brand/profile
+/dashboard/brand/projects/new
+/dashboard/brand/projects/:id/applications
+```
+
+### Shared authenticated
+
+```text
+/projects/:id/workspace
+/notifications
+/dashboard/payments
+```
+
+### Admin
+
+```text
+/dashboard/admin
+```
+
+---
+
+## 🔄 Typical Marketplace Workflow
+
+```text
+Brand
+  │
+  ├── Create project
+  │
+  ├── Generate AI brief (optional)
+  │
+  ├── Discover / match creators
+  │
+  ├── Review applications
+  │
+  └── Hire creator
+          │
+          ▼
+      Fund project
+          │
+          ▼
+     Project workspace
+          │
+          ├── Deliverable
+          │
+          ├── Revision request
+          │
+          ├── Final submission
+          │
+          └── Chat
+          │
+          ▼
+       Approval
+          │
+          ▼
+       Completion
+          │
+          ├── Release creator payment
+          └── Leave review
+```
+
+---
+
+## 🗄️ Database Migrations
+
+Migrations are managed with Alembic.
+
+Create a migration after changing SQLAlchemy models:
+
+```bash
+cd backend
+
+alembic revision --autogenerate -m "describe the change"
+alembic upgrade head
+```
+
+Docker automatically runs:
+
+```bash
+alembic upgrade head
+```
+
+when the backend starts.
+
+If you are upgrading an older local database created before migrations were introduced, reset the Docker volumes once:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+> Back up any data before using `down -v` in an environment containing data you need to keep.
+
+---
+
+## ⚙️ Environment Variables
+
+The main configuration options are:
+
+```env
+DATABASE_URL=
+JWT_SECRET=
+FRONTEND_URL=
+
+PLATFORM_FEE_PERCENT=
+
+# AI
+AI_PROVIDER=
+ANTHROPIC_API_KEY=
+AI_MODEL=
+MATCHING_STRATEGY=
+
+# Payments
+PAYMENT_PROVIDER=
+
+# Storage
+S3_ENDPOINT=
+S3_ACCESS_KEY=
+S3_SECRET_KEY=
+S3_BUCKET=
+S3_REGION=
+PUBLIC_BASE_URL=
+
+# Email
+EMAIL_BACKEND=
+EMAIL_FROM=
+SMTP_HOST=
+SMTP_PORT=
+SMTP_USER=
+SMTP_PASSWORD=
+SMTP_TLS=
+```
+
+See `.env.example` for the complete development configuration.
+
+---
+
+## 🐳 Docker Services
+
+`docker-compose.yml` defines three services:
+
+```text
+┌───────────────┐
+│   Frontend    │
+│ React + Vite  │
+│    :5173      │
+└───────┬───────┘
+        │
+        ▼
+┌───────────────┐
+│    Backend    │
+│ FastAPI/Uvicorn│
+│    :8000      │
+└───────┬───────┘
+        │
+        ▼
+┌───────────────┐
+│  PostgreSQL   │
+│     :5432     │
+└───────────────┘
+```
+
+Persistent Docker volumes:
+
+```text
+pgdata   → PostgreSQL data
+uploads  → Local uploaded files
+```
+
+---
+
+## 🧩 Extending the Application
+
+The project intentionally separates business logic from external providers.
+
+### Add a payment provider
+
+Implement `PaymentProvider` in:
+
+```text
+backend/app/services/payment_providers.py
+```
+
+Then register the provider and configure:
+
+```env
+PAYMENT_PROVIDER=your-provider
+```
+
+### Add an AI provider
+
+Implement `AIProvider` in:
+
+```text
+backend/app/services/ai_providers.py
+```
+
+The brief-generation service can then select the provider without changing the marketplace workflow.
+
+### Add a matching strategy
+
+Matching logic is isolated in:
+
+```text
+backend/app/services/matching.py
+```
+
+This makes it possible to introduce an LLM or ML-based matcher while keeping the marketplace APIs stable.
+
+---
+
+## ⚠️ Current Limitations
+
+This repository is a strong development/MVP foundation, but some production concerns remain:
+
+1. **Payments**
+   - Only the mock provider is included.
+   - Real payment infrastructure requires provider integration, webhooks, creator onboarding, and compliance.
+
+2. **Google OAuth**
+   - The UI can expose the option, but Google OAuth credentials and backend OAuth flow still need to be configured.
+
+3. **Multi-instance realtime**
+   - WebSocket change notifications currently rely on in-process state.
+   - A shared broker such as Redis is recommended for horizontal scaling.
+
+4. **Rate limiting**
+   - Current rate limiting is process-local.
+   - Distributed deployments should use shared state.
+
+5. **File lifecycle**
+   - File cleanup, malware scanning, and advanced media delivery should be strengthened before production.
+
+6. **Browser/E2E coverage**
+   - Unit/component tests exist, but a production launch should add real-browser tests across critical workflows.
+
+7. **Production infrastructure**
+   - Monitoring, backups, secrets management, HTTPS, CDN/object storage, and deployment automation should be added for production.
+
+---
+
+## 🗺️ Roadmap
+
+### Completed foundation
+
+- [x] Authentication and authorization
+- [x] Creator profiles and portfolios
+- [x] Creator discovery/search
+- [x] Brand projects
+- [x] Applications and hiring
+- [x] Project workflow
+- [x] Deliverables and revisions
+- [x] Reviews
+- [x] Notifications
+- [x] Project messaging
+- [x] Payments abstraction
+- [x] Creator earnings
+- [x] File uploads
+- [x] AI briefs
+- [x] Creator matching
+- [x] Admin dashboard
+- [x] Moderation and reports
+- [x] Verification
+- [x] Audit logs
+- [x] Password reset
+- [x] Automated tests
+
+### Suggested next steps
+
+- [ ] Stripe Connect / Razorpay integration
+- [ ] Google OAuth
+- [ ] Redis-backed realtime and rate limiting
+- [ ] Virus scanning for uploads
+- [ ] Background jobs/queue
+- [ ] Browser E2E tests
+- [ ] Production observability
+- [ ] CI/CD pipeline
+- [ ] Creator payout onboarding
+- [ ] Advanced analytics and marketplace metrics
+
+---
+
+## 🤝 Contributing
+
+1. Create a feature branch:
+
+```bash
+git checkout -b feature/my-feature
+```
+
+2. Make your changes.
+
+3. Run backend tests:
+
+```bash
+cd backend
+pytest
+```
+
+4. Run frontend tests:
+
+```bash
+cd frontend
+npm test
+```
+
+5. Build the frontend:
+
+```bash
+npm run build
+```
+
+6. Open a pull request with:
+   - what changed
+   - why it changed
+   - how it was tested
+   - any migration/configuration requirements
+
+---
+
+## 📄 License
+
+Add the project's license here before publishing the repository.
+
+Example:
+
+```text
+MIT License
+```
+
+---
+
+## 👤 Author
+
+**Your Name / Organization**
+
+Replace this section with your:
+
+- name
+- GitHub profile
+- portfolio
+- company
+- contact information
+
+---
+
+## ⭐ Project Summary
+
+**Creatorly is a full-stack AI creator marketplace designed to move a brand from idea → creator discovery → hiring → production → approval → payment → review in one workflow.**
+
+Built with **React + TypeScript + FastAPI + PostgreSQL**, with modular AI, payment, storage, email, and matching providers so the platform can evolve from an MVP into a production marketplace.
